@@ -165,11 +165,11 @@ def build_xlsx_data(data, visible_idx, include_indentation, report_name, include
 		
 		if customer_list:
 			for customer in customer_list:
-				# Step 1: Try to get primary address directly
+				
 				primary_address_name = frappe.db.get_value("Customer", customer, "customer_primary_address")
 
 				if not primary_address_name:
-					# Step 2: Fallback - find any address linked to this customer
+					
 					primary_address_name = frappe.db.get_value(
 						"Dynamic Link",
 						filters={
@@ -189,11 +189,11 @@ def build_xlsx_data(data, visible_idx, include_indentation, report_name, include
      
 		if supplier_list:
 			for supplier in supplier_list:
-				# Step 1: Try to get primary address directly
+				
 				primary_address_name = frappe.db.get_value("Supplier", supplier, "supplier_primary_address")
 
 				if not primary_address_name:
-					# Step 2: Fallback - find any address linked to this customer
+					
 					primary_address_name = frappe.db.get_value(
 						"Dynamic Link",
 						filters={
