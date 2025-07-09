@@ -1,7 +1,7 @@
 [project]
 name = "custom_pppl"
 authors = [
-    { name = "VPS", email = "vivekchamp84@gmail.com"}
+    { name = "vivekchamp84@gmail.com", email = "vivekchamp84@gmail.com"}
 ]
 description = "Custom PPPL"
 requires-python = ">=3.10"

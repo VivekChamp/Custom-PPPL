@@ -1,6 +1,6 @@
 app_name = "custom_pppl"
-app_title = "Custom PPPL"
-app_publisher = "VPS"
+app_title = "Custom Pppl"
+app_publisher = "vivekchamp84@gmail.com"
 app_description = "Custom PPPL"
 app_email = "vivekchamp84@gmail.com"
 app_license = "mit"
