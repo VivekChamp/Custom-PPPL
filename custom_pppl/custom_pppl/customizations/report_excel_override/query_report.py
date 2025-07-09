@@ -128,7 +128,6 @@ def build_xlsx_data(data, visible_idx, include_indentation, report_name, include
 					else:
 						branch_name = [x.strip() for x in filter_value.split(",")]
       
-				
 
 				for f in filter_data:
 					label = f[0].strip().lower()
