@@ -159,9 +159,9 @@ app_license = "mit"
 # Overriding Methods
 # ------------------------------
 #
-# override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "custom_pppl.event.get_events"
-# }
+override_whitelisted_methods = {
+	"frappe.desk.query_report.export_query": "custom_pppl.custom_pppl.customizations.report_excel_override.query_report.export_query"
+}
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
