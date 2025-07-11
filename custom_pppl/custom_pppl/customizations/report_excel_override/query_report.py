@@ -210,7 +210,14 @@ def build_xlsx_data(data, visible_idx, include_indentation, report_name, include
 
 					
 					filter_data.append(["Supplier", f"{supplier}\n{address_plain}"])
-
+		if report_name == "Custom General Ledger":
+			allowed_labels = {"company", "from date", "to date", "branch", "branch address", "customer", "supplier"}
+			filter_data = [row for row in filter_data if not row or row[0].strip().lower() in allowed_labels]
+		
+		elif report_name == "Custom Accounts Receivable":
+			allowed_labels = {"company", "posting date", "branch", "branch address", "customer"}
+			filter_data = [row for row in filter_data if not row or row[0].strip().lower() in allowed_labels]
+   
 		result += filter_data
 
 	column_data = []
