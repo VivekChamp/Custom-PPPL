@@ -397,7 +397,7 @@ class ReceivablePayableReport:
 		if self.account_type == "Receivable":
 			si_list = frappe.db.sql(
 				"""
-				select name, due_date, po_no
+				select name, due_date, po_no, po_date, branch
 				from `tabSales Invoice`
 				where posting_date <= %s
 			""",
@@ -1001,13 +1001,13 @@ class ReceivablePayableReport:
 			options="party_type",
 			width=180,
 		)
-		self.add_column(
-			label=self.account_type + " Account",
-			fieldname="party_account",
-			fieldtype="Link",
-			options="Account",
-			width=180,
-		)
+		# self.add_column(
+		# 	label=self.account_type + " Account",
+		# 	fieldname="party_account",
+		# 	fieldtype="Link",
+		# 	options="Account",
+		# 	width=180,
+		# )
 
 		if self.party_naming_by == "Naming Series":
 			if self.account_type == "Payable":
@@ -1032,7 +1032,7 @@ class ReceivablePayableReport:
 		# 	)
 
 		# self.add_column(label=_("Cost Center"), fieldname="cost_center", fieldtype="Data",hidden=1)
-		self.add_column(label=_("Voucher Type"), fieldname="voucher_type", fieldtype="Data")
+		self.add_column(label=_("Branch"), fieldname="branch", fieldtype="Data")
 		self.add_column(
 			label=_("Voucher No"),
 			fieldname="voucher_no",
@@ -1040,6 +1040,8 @@ class ReceivablePayableReport:
 			options="voucher_type",
 			width=180,
 		)
+		self.add_column(label=_("Voucher Type"), fieldname="voucher_type", fieldtype="Data")
+		
 
 		self.add_column(label="Due Date", fieldtype="Date")
 
@@ -1071,8 +1073,9 @@ class ReceivablePayableReport:
 		# 	self.add_column(label=_("Future Payment Amount"), fieldname="future_amount")
 		# 	self.add_column(label=_("Remaining Balance"), fieldname="remaining_balance")
 
-		# if self.filters.account_type == "Receivable":
-		# 	self.add_column(label=_("Customer LPO"), fieldname="po_no", fieldtype="Data")
+		if self.filters.account_type == "Receivable":
+			self.add_column(label=_("Customer PO"), fieldname="po_no", fieldtype="Data")
+			self.add_column(label=_("Customer PO Date"), fieldname="po_date", fieldtype="Date")			
 
 			# comma separated list of linked delivery notes
 			# if self.filters.show_delivery_notes:
@@ -1120,7 +1123,7 @@ class ReceivablePayableReport:
 	def setup_ageing_columns(self):
 		# for charts
 		self.ageing_column_labels = []
-		self.add_column(label=_("Age (Days)"), fieldname="age", fieldtype="Int", width=80)
+		self.add_column(label=_("Age (Days)"), fieldname="age", fieldtype="Int", width=100)
 
 		for i, label in enumerate(
 			[

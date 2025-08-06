@@ -142,6 +142,27 @@ def get_result(filters, account_details):
 	data = get_data_with_opening_closing(filters, account_details, accounting_dimensions, gl_entries)
 
 	result = get_result_as_list(data, filters)
+	for row in result:
+		voucher_type = row.get("voucher_type")
+		voucher_no = row.get("voucher_no")
+
+		if voucher_type == "Payment Entry":
+			ref = frappe.db.get_value("Payment Entry", voucher_no, ["reference_no", "reference_date"], as_dict=True)
+			if ref:
+				row["cheque_no"] = ref.reference_no
+				row["cheque_date"] = ref.reference_date
+
+		elif voucher_type == "Journal Entry":
+			
+			jea = frappe.db.get_value(
+				"Journal Entry",
+				voucher_no,
+				["cheque_no", "cheque_date"],
+				as_dict=True,
+			)
+			if jea:
+				row["cheque_no"] = jea.cheque_no
+				row["cheque_date"] = jea.cheque_date
 
 	return result
 
@@ -528,7 +549,10 @@ def get_result_as_list(data, filters):
 		d["balance"] = balance
 
 		d["account_currency"] = filters.account_currency
-		d["bill_no"] = inv_details.get(d.get("against_voucher"), "")
+		voucher = d.get("against_voucher")
+		invoice_info = inv_details.get(voucher, {})
+		d["bill_no"] = invoice_info.get("bill_no", "")
+		d["bill_date"] = invoice_info.get("bill_date", "")
 
 	return data
 
@@ -536,11 +560,17 @@ def get_result_as_list(data, filters):
 def get_supplier_invoice_details():
 	inv_details = {}
 	for d in frappe.db.sql(
-		""" select name, bill_no from `tabPurchase Invoice`
-		where docstatus = 1 and bill_no is not null and bill_no != '' """,
+		"""
+		SELECT name, bill_no, bill_date
+		FROM `tabPurchase Invoice`
+		WHERE docstatus = 1
+		""",
 		as_dict=1,
 	):
-		inv_details[d.name] = d.bill_no
+		inv_details[d.name] = {
+			"bill_no": d.bill_no or "",
+			"bill_date": d.bill_date or "",
+		}
 
 	return inv_details
 
@@ -569,7 +599,7 @@ def get_columns(filters):
 			"options": "GL Entry",
 			"hidden": 1,
 		},
-		{"label": _("Posting Date"), "fieldname": "posting_date", "fieldtype": "Date", "width": 100},
+		{"label": _("Posting Date"), "fieldname": "posting_date", "fieldtype": "Date", "width": 110},
 		{
 			"label": _("Account"),
 			"fieldname": "account",
@@ -577,25 +607,20 @@ def get_columns(filters):
 			"options": "Account",
 			"width": 180,
 		},
-		{
-			"label": _("Debit ({0})").format(currency),
-			"fieldname": "debit",
-			"fieldtype": "Float",
-			"width": 130,
-		},
-		{
-			"label": _("Credit ({0})").format(currency),
-			"fieldname": "credit",
-			"fieldtype": "Float",
-			"width": 130,
-		},
-		{
-			"label": _("Balance ({0})").format(currency),
-			"fieldname": "balance",
-			"fieldtype": "Float",
-			"width": 130,
-		},
+  		{"label": _("Against Account"), "fieldname": "against", "width": 170},
+    
+		
+		
 	]
+
+	if filters.get("include_dimensions"):
+		for dim in get_accounting_dimensions(as_list=False):
+			columns.append(
+				{"label": _(dim.label), "options": dim.label, "fieldname": dim.fieldname, "width": 110}
+			)
+		columns.append(
+			{"label": _("Cost Center"), "options": "Cost Center", "fieldname": "cost_center", "width": 100, "hidden": 1,}
+		)
 
 	if filters.get("add_values_in_transaction_currency"):
 		columns += [
@@ -627,7 +652,7 @@ def get_columns(filters):
 		]
 
 	columns += [
-		{"label": _("Voucher Type"), "fieldname": "voucher_type", "width": 120},
+		
 		{
 			"label": _("Voucher Subtype"),
 			"fieldname": "voucher_subtype",
@@ -642,20 +667,30 @@ def get_columns(filters):
 			"options": "voucher_type",
 			"width": 180,
 		},
-		{"label": _("Against Account"), "fieldname": "against", "width": 120},
-		{"label": _("Party Type"), "fieldname": "party_type", "width": 100, "hidden": 1},
-		{"label": _("Party"), "fieldname": "party", "width": 100},
+  		{
+			"label": _("Voucher Date"),
+			"fieldname": "bill_date",
+			"fieldtype": "Date",
+			"width": 180,
+		},
+    	{
+			"label": _("Cheque/Reference No"),
+			"fieldname": "cheque_no",
+			"fieldtype": "Data",
+			"width": 130,
+		},
+    	{
+			"label": _("Cheque/Reference Date"),
+			"fieldname": "cheque_date",
+			"fieldtype": "Date",
+			"width": 130,
+		},
+		
+		
 		{"label": _("Project"), "options": "Project", "fieldname": "project", "width": 100,"hidden": 1,},
 	]
 
-	if filters.get("include_dimensions"):
-		for dim in get_accounting_dimensions(as_list=False):
-			columns.append(
-				{"label": _(dim.label), "options": dim.label, "fieldname": dim.fieldname, "width": 100}
-			)
-		columns.append(
-			{"label": _("Cost Center"), "options": "Cost Center", "fieldname": "cost_center", "width": 100, "hidden": 1,}
-		)
+	
 
 	columns.extend(
 		[
@@ -669,11 +704,34 @@ def get_columns(filters):
 				"width": 100,
     
 			},
-			{"label": _("Supplier Invoice No"), "fieldname": "bill_no", "fieldtype": "Data", "width": 100},
+   			{"label": _("Voucher Type"), "fieldname": "voucher_type", "width": 120},
+			{"label": _("Supplier Invoice No"), "fieldname": "bill_no", "fieldtype": "Data", "width": 120},
+   			{
+				"label": _("Debit ({0})").format(currency),
+				"fieldname": "debit",
+				"fieldtype": "Float",
+				"width": 130,
+			},
+			{
+				"label": _("Credit ({0})").format(currency),
+				"fieldname": "credit",
+				"fieldtype": "Float",
+				"width": 130,
+			},
+			{
+				"label": _("Balance ({0})").format(currency),
+				"fieldname": "balance",
+				"fieldtype": "Float",
+				"width": 130,
+			},
 		]
 	)
 
 	if filters.get("show_remarks"):
 		columns.extend([{"label": _("Remarks"), "fieldname": "remarks", "width": 400}])
-
+	columns.extend(
+     [
+        {"label": _("Party Type"), "fieldname": "party_type", "width": 100, "hidden": 1},
+		{"label": _("Party"), "fieldname": "party", "width": 150},
+    ])
 	return columns
