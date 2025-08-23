@@ -36,12 +36,12 @@ def get_data(filters, show_party_name):
 		filters=party_filters,
 		order_by="name",
 	)
+
 	company_currency = frappe.get_cached_value("Company", filters.company, "default_currency")
 	opening_balances = get_opening_balances(filters)
 	balances_within_period = get_balances_within_period(filters)
 
 	data = []
-	# total_debit, total_credit = 0, 0
 	total_row = frappe._dict(
 		{
 			"opening_debit": 0,
@@ -52,12 +52,16 @@ def get_data(filters, show_party_name):
 			"closing_credit": 0,
 		}
 	)
+
 	for party in parties:
-		party_branches = [key for key in balances_within_period if key[0] == party.name] or [(party.name, None)]
+		# if branch filter is applied → rows per (party, branch)
+		# else → consolidated by party
+		keys = [k for k in opening_balances.keys() if k[0] == party.name] \
+			or [k for k in balances_within_period.keys() if k[0] == party.name] \
+			or [(party.name, filters.get("branch") if filters.get("branch") else None)]
 
-		for p, branch in party_branches:
+		for p, branch in keys:
 			row = {"party": p, "branch": branch}
-
 			if show_party_name:
 				row["party_name"] = party.get(party_name_field)
 
@@ -75,18 +79,18 @@ def get_data(filters, show_party_name):
 
 			# totals
 			for col in total_row:
-				total_row[col] += row.get(col)
+				total_row[col] += row.get(col, 0) or 0
 
 			row.update({"currency": company_currency})
 
 			has_value = any([opening_debit, opening_credit, debit, credit, closing_debit, closing_credit])
-
 			if cint(filters.show_zero_values) or has_value:
 				data.append(row)
 
 	# Add total row
-
 	total_row.update({"party": "'" + _("Totals") + "'", "currency": company_currency})
+	if filters.get("branch"):
+		total_row.update({"branch": filters.get("branch")})
 	data.append(total_row)
 
 	return data
@@ -98,8 +102,10 @@ def get_opening_balances(filters):
 		account_filter = "and account = %s" % (frappe.db.escape(filters.get("account")))
 
 	branch_filter = ""
+	group_by = "party"
 	if filters.get("branch"):
 		branch_filter = "and branch = %s" % (frappe.db.escape(filters.get("branch")))
+		group_by = "party, branch"
 
 	gle = frappe.db.sql(
 		f"""
@@ -110,7 +116,7 @@ def get_opening_balances(filters):
 			and ifnull(party_type, '') = %(party_type)s and ifnull(party, '') != ''
 			and (posting_date < %(from_date)s or (ifnull(is_opening, 'No') = 'Yes' and posting_date <= %(to_date)s))
 			{account_filter} {branch_filter}
-		group by party, branch""",
+		group by {group_by}""",
 		{
 			"company": filters.company,
 			"from_date": filters.from_date,
@@ -123,7 +129,7 @@ def get_opening_balances(filters):
 	opening = frappe._dict()
 	for d in gle:
 		opening_debit, opening_credit = toggle_debit_credit(d.opening_debit, d.opening_credit)
-		opening[(d.party, d.branch)] = [opening_debit, opening_credit]
+		opening[(d.party, d.branch if filters.get("branch") else None)] = [opening_debit, opening_credit]
 
 	return opening
 
@@ -134,8 +140,10 @@ def get_balances_within_period(filters):
 		account_filter = "and account = %s" % (frappe.db.escape(filters.get("account")))
 
 	branch_filter = ""
+	group_by = "party"
 	if filters.get("branch"):
 		branch_filter = "and branch = %s" % (frappe.db.escape(filters.get("branch")))
+		group_by = "party, branch"
 
 	gle = frappe.db.sql(
 		f"""
@@ -147,7 +155,7 @@ def get_balances_within_period(filters):
 			and posting_date >= %(from_date)s and posting_date <= %(to_date)s
 			and ifnull(is_opening, 'No') = 'No'
 			{account_filter} {branch_filter}
-		group by party, branch""",
+		group by {group_by}""",
 		{
 			"company": filters.company,
 			"from_date": filters.from_date,
@@ -159,9 +167,10 @@ def get_balances_within_period(filters):
 
 	balances_within_period = frappe._dict()
 	for d in gle:
-		balances_within_period[(d.party, d.branch)] = [d.debit, d.credit]
+		balances_within_period[(d.party, d.branch if filters.get("branch") else None)] = [d.debit, d.credit]
 
 	return balances_within_period
+
 
 
 def toggle_debit_credit(debit, credit):
@@ -184,13 +193,20 @@ def get_columns(filters, show_party_name):
 			"options": filters.party_type,
 			"width": 200,
 		},
- 		{
-			"fieldname": "branch",
-			"label": _("Branch"),
-			"fieldtype": "Link",
-			"options": "Branch",
-			"width": 200,
-		},
+	]
+
+	if filters.get("branch"):
+		columns.append(
+			{
+				"fieldname": "branch",
+				"label": _("Branch"),
+				"fieldtype": "Link",
+				"options": "Branch",
+				"width": 200,
+			}
+		)
+
+	columns += [
 		{
 			"fieldname": "opening_debit",
 			"label": _("Opening (Dr)"),
