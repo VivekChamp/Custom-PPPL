@@ -53,35 +53,36 @@ def get_data(filters, show_party_name):
 		}
 	)
 	for party in parties:
-		row = {"party": party.name}
-		if show_party_name:
-			row["party_name"] = party.get(party_name_field)
+		party_branches = [key for key in balances_within_period if key[0] == party.name] or [(party.name, None)]
 
-		# opening
-		opening_debit, opening_credit = opening_balances.get(party.name, [0, 0])
-		row.update({"opening_debit": opening_debit, "opening_credit": opening_credit})
+		for p, branch in party_branches:
+			row = {"party": p, "branch": branch}
 
-		debit, credit, branch = (0, 0, None)
-		if balances_within_period.get(party.name):
-			debit, credit, branch = balances_within_period.get(party.name, [0, 0, None])
-		row.update({"debit": debit, "credit": credit, "branch": branch})
+			if show_party_name:
+				row["party_name"] = party.get(party_name_field)
 
-		# closing
-		closing_debit, closing_credit = toggle_debit_credit(opening_debit + debit, opening_credit + credit)
-		row.update({"closing_debit": closing_debit, "closing_credit": closing_credit})
+			# opening
+			opening_debit, opening_credit = opening_balances.get((p, branch), [0, 0])
+			row.update({"opening_debit": opening_debit, "opening_credit": opening_credit})
 
-		# totals
-		for col in total_row:
-			total_row[col] += row.get(col)
+			# within period
+			debit, credit = balances_within_period.get((p, branch), [0, 0])
+			row.update({"debit": debit, "credit": credit})
 
-		row.update({"currency": company_currency})
+			# closing
+			closing_debit, closing_credit = toggle_debit_credit(opening_debit + debit, opening_credit + credit)
+			row.update({"closing_debit": closing_debit, "closing_credit": closing_credit})
 
-		has_value = False
-		if opening_debit or opening_credit or debit or credit or closing_debit or closing_credit:
-			has_value = True
+			# totals
+			for col in total_row:
+				total_row[col] += row.get(col)
 
-		if cint(filters.show_zero_values) or has_value:
-			data.append(row)
+			row.update({"currency": company_currency})
+
+			has_value = any([opening_debit, opening_credit, debit, credit, closing_debit, closing_credit])
+
+			if cint(filters.show_zero_values) or has_value:
+				data.append(row)
 
 	# Add total row
 
@@ -102,14 +103,14 @@ def get_opening_balances(filters):
 
 	gle = frappe.db.sql(
 		f"""
-		select party, sum(debit) as opening_debit, sum(credit) as opening_credit
+		select party, branch, sum(debit) as opening_debit, sum(credit) as opening_credit
 		from `tabGL Entry`
 		where company=%(company)s
 			and is_cancelled=0
 			and ifnull(party_type, '') = %(party_type)s and ifnull(party, '') != ''
 			and (posting_date < %(from_date)s or (ifnull(is_opening, 'No') = 'Yes' and posting_date <= %(to_date)s))
 			{account_filter} {branch_filter}
-		group by party""",
+		group by party, branch""",
 		{
 			"company": filters.company,
 			"from_date": filters.from_date,
@@ -122,7 +123,7 @@ def get_opening_balances(filters):
 	opening = frappe._dict()
 	for d in gle:
 		opening_debit, opening_credit = toggle_debit_credit(d.opening_debit, d.opening_credit)
-		opening.setdefault(d.party, [opening_debit, opening_credit])
+		opening[(d.party, d.branch)] = [opening_debit, opening_credit]
 
 	return opening
 
@@ -131,14 +132,14 @@ def get_balances_within_period(filters):
 	account_filter = ""
 	if filters.get("account"):
 		account_filter = "and account = %s" % (frappe.db.escape(filters.get("account")))
-	
+
 	branch_filter = ""
 	if filters.get("branch"):
 		branch_filter = "and branch = %s" % (frappe.db.escape(filters.get("branch")))
 
 	gle = frappe.db.sql(
 		f"""
-		select party, sum(debit) as debit, sum(credit) as credit, branch
+		select party, branch, sum(debit) as debit, sum(credit) as credit
 		from `tabGL Entry`
 		where company=%(company)s
 			and is_cancelled = 0
@@ -158,12 +159,7 @@ def get_balances_within_period(filters):
 
 	balances_within_period = frappe._dict()
 	for d in gle:
-		
-		balances_within_period[d.party] = [
-			d.debit or 0,
-			d.credit or 0,
-			d.branch or None,
-		]
+		balances_within_period[(d.party, d.branch)] = [d.debit, d.credit]
 
 	return balances_within_period
 
