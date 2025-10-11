@@ -30,55 +30,6 @@ frappe.query_reports["Sales Dashboard"] = {
             fieldtype: "Date",
             default: frappe.datetime.get_today(),
             reqd: 1,
-        },
-        {
-            fieldname: "branch",
-            label: __("Branch"),
-            fieldtype: "MultiSelectList",
-            hidden:1,
-            get_data: function(txt) { return frappe.db.get_link_options("Branch", txt); }
-        },
-        {
-            fieldname: "warehouse",
-            label: __("Warehouse"),
-            fieldtype: "MultiSelectList",
-            hidden:1,
-            get_data: function(txt) { return frappe.db.get_link_options("Warehouse", txt); }
-        },
-        {
-            fieldname: "brand",
-            label: __("Brand"),
-            fieldtype: "MultiSelectList",
-            hidden:1,
-            get_data: function(txt) { return frappe.db.get_link_options("Brand", txt); }
-        },
-        {
-            fieldname: "customer_group",
-            label: __("Customer Group"),
-            fieldtype: "MultiSelectList",
-            hidden:1,
-            get_data: function(txt) { return frappe.db.get_link_options("Customer Group", txt); }
-        },
-        {
-            fieldname: "item_group",
-            label: __("Item Group"),
-            hidden:1,
-            fieldtype: "MultiSelectList",
-            get_data: function(txt) { return frappe.db.get_link_options("Item Group", txt); }
-        },
-        {
-            fieldname: "customer",
-            label: __("Customer"),
-            fieldtype: "MultiSelectList",
-            hidden:1,
-            get_data: function(txt) { return frappe.db.get_link_options("Customer", txt); }
-        },
-        {
-            fieldname: "sales_person",
-            label: __("Sales Person"),
-            fieldtype: "MultiSelectList",
-            hidden:1,
-            get_data: function(txt) { return frappe.db.get_link_options("Sales Person", txt); }
         }
     ],
 
