@@ -4,66 +4,70 @@
 import frappe
 from frappe import _
 
-from frappe.utils import get_first_day, get_last_day, add_months, add_years, getdate, add_days
+from frappe.utils import (
+	getdate,
+	get_first_day,
+	get_last_day,
+	add_months,
+	add_years,
+	today
+)
 from frappe.utils import getdate
 from frappe.utils.data import get_last_day
-from erpnext.accounts.utils import get_fiscal_year
-import datetime
+
 
 
 def execute(filters=None):
 	filters = filters or {}
-	today = getdate(frappe.utils.today())
+	today_date = getdate(today())
 	period = filters.get("period")
 
-	# Get current fiscal year based on today
-	fy_info = get_fiscal_year(today)
-	fy_start = getdate(fy_info[1])
-	fy_end = getdate(fy_info[2])
+	# Define calendar year range (January 1 to December 31)
+	year_start = getdate(f"{today_date.year}-01-01")
+	year_end = getdate(f"{today_date.year}-12-31")
 
 	from_date, to_date = None, None
 
-	if period == "Monthly":
-		from_date = get_first_day(today)
-		to_date = get_last_day(today)
+	if period == "Current Month":
+		from_date = get_first_day(today_date)
+		to_date = get_last_day(today_date)
 
-	elif period == "Quarterly":
-		quarter_start_month = ((today.month - 1) // 3) * 3 + 1
-		from_date = getdate(f"{today.year}-{quarter_start_month:02d}-01")
+	elif period == "Current Quarter":
+		quarter_start_month = ((today_date.month - 1) // 3) * 3 + 1
+		from_date = getdate(f"{today_date.year}-{quarter_start_month:02d}-01")
 		to_date = get_last_day(add_months(from_date, 2))
 
-	elif period == "Half Yearly":
-		fy_half_1_start = fy_start
-		fy_half_1_end = add_months(fy_start, 6)  # 6 months after FY start
-		fy_half_1_end = add_days(fy_half_1_end, -1)  # end of first half
-		fy_half_2_start = fy_half_1_end + datetime.timedelta(days=1)
-		fy_half_2_end = fy_end
+	elif period == "Current Half-Year":
+		half_1_start = year_start
+		half_1_end = getdate(f"{today_date.year}-06-30")
+		half_2_start = getdate(f"{today_date.year}-07-01")
+		half_2_end = year_end
 
-		if fy_half_1_start <= today <= fy_half_1_end:
-			from_date = fy_half_1_start
-			to_date = fy_half_1_end
+		if half_1_start <= today_date <= half_1_end:
+			from_date = half_1_start
+			to_date = half_1_end
 		else:
-			from_date = fy_half_2_start
-			to_date = fy_half_2_end
+			from_date = half_2_start
+			to_date = half_2_end
 
-	elif period == "Yearly":
-		from_date = fy_start
-		to_date = fy_end
+	elif period == "Current Year":
+		from_date = year_start
+		to_date = year_end
 
 	else:
-		from_date = getdate(filters.get("from_date")) if filters.get("from_date") else fy_start
-		to_date = getdate(filters.get("to_date")) if filters.get("to_date") else fy_end
+		from_date = getdate(filters.get("from_date")) if filters.get("from_date") else year_start
+		to_date = getdate(filters.get("to_date")) if filters.get("to_date") else year_end
 
-	from_date = getdate(from_date)
-	to_date = getdate(to_date)
+	# Ensure within calendar year boundaries
+	if from_date < year_start:
+		from_date = year_start
+	if to_date > year_end:
+		to_date = year_end
 
-	if from_date < fy_start:
-		from_date = fy_start
-	if to_date > fy_end:
-		to_date = fy_end
-
+	# Previous year comparison dates
 	prev_from_date = add_years(from_date, -1)
 	prev_to_date = add_years(to_date, -1)
+
 
 
 	def get_child_groups(parent_name):
@@ -87,6 +91,9 @@ def execute(filters=None):
 
 		conditions = []
 		params = []
+
+		conditions.append("c.customer_name NOT LIKE %s")
+		params.append("%Parikh Power Private Limited%")
 
 		if item_group:
 			placeholders = ", ".join(["%s"] * len(item_group))
@@ -128,6 +135,9 @@ def execute(filters=None):
 		conditions = []
 		params = []
 
+		conditions.append("c.customer_name NOT LIKE %s")
+		params.append("%Parikh Power Private Limited%")
+
 		if item_group:
 			placeholders = ", ".join(["%s"] * len(item_group))
 			conditions.append(f"sii.item_group IN ({placeholders})")
@@ -165,17 +175,19 @@ def execute(filters=None):
 		return frappe.db.sql(query, tuple(params))[0][0] or 0
 
 	def get_net_sales_total(from_dt, to_dt):
+		exclude_customer = "%Parikh Power Private Limited%"
+
 		sales = frappe.db.sql("""
 			SELECT IFNULL(SUM(base_net_total), 0)
 			FROM `tabSales Invoice`
-			WHERE docstatus = 1 AND is_return = 0 AND posting_date BETWEEN %s AND %s
-		""", (from_dt, to_dt))[0][0] or 0
+			WHERE docstatus = 1 AND is_return = 0 AND posting_date BETWEEN %s AND %s AND customer NOT LIKE %s
+		""", (from_dt, to_dt, exclude_customer))[0][0] or 0
 
 		returns = frappe.db.sql("""
 			SELECT IFNULL(SUM(ABS(base_net_total)), 0)
 			FROM `tabSales Invoice`
-			WHERE docstatus = 1 AND is_return = 1 AND posting_date BETWEEN %s AND %s
-		""", (from_dt, to_dt))[0][0] or 0
+			WHERE docstatus = 1 AND is_return = 1 AND posting_date BETWEEN %s AND %s AND customer NOT LIKE %s
+		""", (from_dt, to_dt, exclude_customer))[0][0] or 0
 
 		return sales - returns
 

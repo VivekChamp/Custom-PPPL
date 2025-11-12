@@ -8,10 +8,10 @@ frappe.query_reports["Sales Dashboard"] = {
             label: __("Period"),
             fieldtype: "Select",
             options: [
-                "Monthly",
-                "Quarterly",
-                "Half Yearly",
-                "Yearly",
+                "Current Month",
+                "Current Quarter",
+                "Current Half-Year",
+                "Current Year",
                 "Date Range"
             ],
             default: "Yearly",
