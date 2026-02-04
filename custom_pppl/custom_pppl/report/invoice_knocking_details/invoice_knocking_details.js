@@ -27,6 +27,12 @@ frappe.query_reports["Invoice Knocking Details"] = {
 			reqd: 1,
 			width: "60",
 		},
+		{
+			fieldname: "branch",
+			label: __("Branch"),
+			fieldtype: "Link",
+			options: "Branch",
+		},
 
 	]
 };
