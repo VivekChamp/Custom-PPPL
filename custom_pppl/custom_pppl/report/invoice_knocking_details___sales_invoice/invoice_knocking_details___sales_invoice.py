@@ -1,7 +1,6 @@
 # Copyright (c) 2026, vivekchamp84@gmail.com and contributors
 # For license information, please see license.txt
 
-# import frappe
 import frappe
 from frappe import _
 
