@@ -30,6 +30,48 @@ frappe.query_reports["Sales Dashboard"] = {
             fieldtype: "Date",
             default: frappe.datetime.get_today(),
             reqd: 1,
+        },
+        {
+            fieldname: "branch",
+            label: __("Branch"),
+            fieldtype: "Link",
+            options: "Branch"
+        },
+        {
+            fieldname: "warehouse",
+            label: __("Warehouse"),
+            fieldtype: "Link",
+            options: "Warehouse"
+        },
+        {
+            fieldname: "brand",
+            label: __("Brand"),
+            fieldtype: "Link",
+            options: "Brand"
+        },
+        {
+            fieldname: "customer_group",
+            label: __("Customer Group"),
+            fieldtype: "Link",
+            options: "Customer Group"
+        },
+        {
+            fieldname: "item_group",
+            label: __("Item Group"),
+            fieldtype: "Link",
+            options: "Item Group"
+        },
+        {
+            fieldname: "customer",
+            label: __("Customer"),
+            fieldtype: "Link",
+            options: "Customer"
+        },
+        {
+            fieldname: "sales_person",
+            label: __("Sales Person"),
+            fieldtype: "Link",
+            options: "Sales Person"
         }
     ],
 

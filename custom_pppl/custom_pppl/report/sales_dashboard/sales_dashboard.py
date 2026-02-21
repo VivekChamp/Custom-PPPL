@@ -5,161 +5,162 @@ import frappe
 from frappe import _
 
 from frappe.utils import (
-	getdate,
-	get_first_day,
-	get_last_day,
-	add_months,
-	add_years,
-	today
+    getdate,
+    get_first_day,
+    get_last_day,
+    add_months,
+    add_years,
+    today,
 )
 from frappe.utils import getdate
 from frappe.utils.data import get_last_day
 
 
-
 def execute(filters=None):
-	filters = filters or {}
-	today_date = getdate(today())
-	period = filters.get("period")
+    filters = filters or {}
 
-	# Define calendar year range (January 1 to December 31)
-	year_start = getdate(f"{today_date.year}-01-01")
-	year_end = getdate(f"{today_date.year}-12-31")
+    today_date = getdate(today())
+    period = filters.get("period")
 
-	from_date, to_date = None, None
+    year_start = getdate(f"{today_date.year}-01-01")
+    year_end = getdate(f"{today_date.year}-12-31")
 
-	if period == "Current Month":
-		from_date = get_first_day(today_date)
-		to_date = get_last_day(today_date)
+    if period == "Current Month":
+        from_date = get_first_day(today_date)
+        to_date = get_last_day(today_date)
 
-	elif period == "Current Quarter":
-		quarter_start_month = ((today_date.month - 1) // 3) * 3 + 1
-		from_date = getdate(f"{today_date.year}-{quarter_start_month:02d}-01")
-		to_date = get_last_day(add_months(from_date, 2))
+    elif period == "Current Quarter":
+        quarter_start_month = ((today_date.month - 1) // 3) * 3 + 1
+        from_date = getdate(f"{today_date.year}-{quarter_start_month:02d}-01")
+        to_date = get_last_day(add_months(from_date, 2))
 
-	elif period == "Current Half-Year":
-		half_1_start = year_start
-		half_1_end = getdate(f"{today_date.year}-06-30")
-		half_2_start = getdate(f"{today_date.year}-07-01")
-		half_2_end = year_end
+    elif period == "Current Half-Year":
+        if today_date.month <= 6:
+            from_date = year_start
+            to_date = getdate(f"{today_date.year}-06-30")
+        else:
+            from_date = getdate(f"{today_date.year}-07-01")
+            to_date = year_end
 
-		if half_1_start <= today_date <= half_1_end:
-			from_date = half_1_start
-			to_date = half_1_end
-		else:
-			from_date = half_2_start
-			to_date = half_2_end
+    elif period == "Current Year":
+        from_date = year_start
+        to_date = year_end
 
-	elif period == "Current Year":
-		from_date = year_start
-		to_date = year_end
+    else:
+        from_date = (
+            getdate(filters.get("from_date"))
+            if filters.get("from_date")
+            else year_start
+        )
+        to_date = (
+            getdate(filters.get("to_date")) if filters.get("to_date") else year_end
+        )
 
-	else:
-		from_date = getdate(filters.get("from_date")) if filters.get("from_date") else year_start
-		to_date = getdate(filters.get("to_date")) if filters.get("to_date") else year_end
+    prev_from_date = add_years(from_date, -1)
+    prev_to_date = add_years(to_date, -1)
 
-	# Ensure within calendar year boundaries
-	if from_date < year_start:
-		from_date = year_start
-	if to_date > year_end:
-		to_date = year_end
+    # Child Item Groups
+    def get_child_groups(parent_name):
+        parent = frappe.db.get_value(
+            "Item Group", parent_name, ["lft", "rgt"], as_dict=True
+        )
+        if not parent:
+            return [parent_name]
 
-	# Previous year comparison dates
-	prev_from_date = add_years(from_date, -1)
-	prev_to_date = add_years(to_date, -1)
+        groups = frappe.get_all(
+            "Item Group",
+            filters={"lft": (">=", parent.lft), "rgt": ("<=", parent.rgt)},
+            pluck="name",
+        )
+        return groups
 
+    # Base Filters Builder
+    def build_conditions(
+        from_dt, to_dt, item_group=None, uom=None, card_customer_group=None
+    ):
+        conditions = [
+            "si.docstatus = 1",
+            "c.customer_name NOT LIKE %s",
+            "si.posting_date BETWEEN %s AND %s",
+        ]
+        params = ["%Parikh Power Private Limited%", from_dt, to_dt]
 
+        # Report Filters
+        if filters.get("branch"):
+            conditions.append("si.branch = %s")
+            params.append(filters["branch"])
 
-	def get_child_groups(parent_name):
-		parent = frappe.db.get_value("Item Group", parent_name, ["lft", "rgt"], as_dict=True)
-		if not parent:
-			return [parent_name]
-		
-		groups = frappe.get_all(
-			"Item Group",
-			filters={"lft": (">=", parent.lft), "rgt": ("<=", parent.rgt)},
-			pluck="name"
-		)
-		
-		if parent_name not in groups:
-			groups.append(parent_name)
-		
-		return groups
+        if filters.get("warehouse"):
+            conditions.append("sii.warehouse = %s")
+            params.append(filters["warehouse"])
 
-	def get_sales(from_dt, to_dt, item_group=None, uom=None, customer_group=None, without_tax=False):
-		amount_field = "sii.rate * sii.qty" if without_tax else "sii.base_net_amount"
+        if filters.get("brand"):
+            conditions.append("sii.brand = %s")
+            params.append(filters["brand"])
 
-		conditions = []
-		params = []
+        if filters.get("customer"):
+            conditions.append("si.customer = %s")
+            params.append(filters["customer"])
 
-		conditions.append("c.customer_name NOT LIKE %s")
-		params.append("%Parikh Power Private Limited%")
+        if filters.get("sales_person"):
+            conditions.append("st.sales_person = %s")
+            params.append(filters["sales_person"])
 
-		if item_group:
-			placeholders = ", ".join(["%s"] * len(item_group))
-			conditions.append(f"sii.item_group IN ({placeholders})")
-			params.extend(item_group)
+        # Customer Group (Card-level priority)
+        if card_customer_group:
+            conditions.append("c.customer_group = %s")
+            params.append(card_customer_group)
+        elif filters.get("customer_group"):
+            conditions.append("c.customer_group = %s")
+            params.append(filters["customer_group"])
 
-		if uom:
-			conditions.append("sii.uom = %s")
-			params.append(uom)
+        
+        if item_group:
+            placeholders = ", ".join(["%s"] * len(item_group))
+            conditions.append(f"sii.item_group IN ({placeholders})")
+            params.extend(item_group)
 
-		if customer_group:
-			conditions.append("c.customer_group = %s")
-			params.append(customer_group)
+        elif filters.get("item_group"):
+            report_groups = get_child_groups(filters["item_group"])
+            placeholders = ", ".join(["%s"] * len(report_groups))
+            conditions.append(f"sii.item_group IN ({placeholders})")
+            params.extend(report_groups)
 
-		if from_dt and to_dt:
-			conditions.append("si.posting_date BETWEEN %s AND %s")
-			params.extend([from_dt, to_dt])
+        if uom:
+            conditions.append("sii.uom = %s")
+            params.append(uom)
 
-		cond_sql = ""
-		if conditions:
-			cond_sql = "AND " + " AND ".join(conditions)
+        return conditions, params
 
-		query = f"""
+    # Sales Amount
+    def get_sales(from_dt, to_dt, item_group=None, uom=None, card_customer_group=None):
+        conditions, params = build_conditions(
+            from_dt, to_dt, item_group, uom, card_customer_group
+        )
+
+        query = f"""
 			SELECT IFNULL(SUM(
 				CASE 
-					WHEN si.is_return = 0 THEN {amount_field}
-					WHEN si.is_return = 1 THEN -1 * ABS({amount_field})
+					WHEN si.is_return = 0 THEN sii.base_net_amount
+					WHEN si.is_return = 1 THEN -1 * ABS(sii.base_net_amount)
 				END
 			), 0)
 			FROM `tabSales Invoice Item` sii
 			INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
 			INNER JOIN `tabCustomer` c ON c.name = si.customer
-			WHERE si.docstatus = 1
-			{cond_sql}
+			LEFT JOIN `tabSales Team` st ON st.parent = si.name
+			WHERE {" AND ".join(conditions)}
 		"""
-		return frappe.db.sql(query, tuple(params))[0][0] or 0
 
-	def get_qty(item_group=None, uom=None, customer_group=None, from_dt=None, to_dt=None):
-		conditions = []
-		params = []
+        return frappe.db.sql(query, tuple(params))[0][0] or 0
 
-		conditions.append("c.customer_name NOT LIKE %s")
-		params.append("%Parikh Power Private Limited%")
+    # Quantity
+    def get_qty(from_dt, to_dt, item_group=None, uom=None, card_customer_group=None):
+        conditions, params = build_conditions(
+            from_dt, to_dt, item_group, uom, card_customer_group
+        )
 
-		if item_group:
-			placeholders = ", ".join(["%s"] * len(item_group))
-			conditions.append(f"sii.item_group IN ({placeholders})")
-			params.extend(item_group)
-
-		if uom:
-			conditions.append("sii.uom = %s")
-			params.append(uom)
-
-		if customer_group:
-			conditions.append("c.customer_group = %s")
-			params.append(customer_group)
-
-		if from_dt and to_dt:
-			conditions.append("si.posting_date BETWEEN %s AND %s")
-			params.extend([from_dt, to_dt])
-
-		cond_sql = ""
-		if conditions:
-			cond_sql = "AND " + " AND ".join(conditions)
-
-		query = f"""
+        query = f"""
 			SELECT IFNULL(SUM(
 				CASE 
 					WHEN si.is_return = 0 THEN sii.qty
@@ -169,69 +170,162 @@ def execute(filters=None):
 			FROM `tabSales Invoice Item` sii
 			INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
 			INNER JOIN `tabCustomer` c ON c.name = si.customer
-			WHERE si.docstatus = 1
-			{cond_sql}
+			LEFT JOIN `tabSales Team` st ON st.parent = si.name
+			WHERE {" AND ".join(conditions)}
 		"""
-		return frappe.db.sql(query, tuple(params))[0][0] or 0
 
-	def get_net_sales_total(from_dt, to_dt):
-		exclude_customer = "%Parikh Power Private Limited%"
+        return frappe.db.sql(query, tuple(params))[0][0] or 0
 
-		sales = frappe.db.sql("""
-			SELECT IFNULL(SUM(base_net_total), 0)
-			FROM `tabSales Invoice`
-			WHERE docstatus = 1 AND is_return = 0 AND posting_date BETWEEN %s AND %s AND customer NOT LIKE %s
-		""", (from_dt, to_dt, exclude_customer))[0][0] or 0
+    # Net Sales (Invoice level)
+    def get_net_sales_total(from_dt, to_dt):
 
-		returns = frappe.db.sql("""
-			SELECT IFNULL(SUM(ABS(base_net_total)), 0)
-			FROM `tabSales Invoice`
-			WHERE docstatus = 1 AND is_return = 1 AND posting_date BETWEEN %s AND %s AND customer NOT LIKE %s
-		""", (from_dt, to_dt, exclude_customer))[0][0] or 0
+        conditions = [
+            "si.docstatus = 1",
+            "si.posting_date BETWEEN %s AND %s",
+            "c.customer_name NOT LIKE %s",
+        ]
 
-		return sales - returns
+        params = [from_dt, to_dt, "%Parikh Power Private Limited%"]
 
-	net_sales = get_net_sales_total(from_date, to_date)
-	prev_net_sales = get_net_sales_total(prev_from_date, prev_to_date)
+        # Report Filters
 
-	item_cards = [
-		{"label": "Tyre (Nos)", "group": "TYRE", "uom": "Nos", "type": "qty"},
-		{"label": "Tipper (Nos)", "group": "TIPPER", "uom": "Nos", "type": "qty"},
-		{"label": "Non Tipper (Nos)", "group": "Non TIPPER", "uom": "Nos", "type": "qty"},
-		{"label": "Tyre (Kg)", "group": "TYRE", "uom": "Kg", "type": "qty"},
-		{"label": "Pumps (Nos)", "group": "PUMPS", "uom": "Nos", "type": "qty"},
-		{"label": "Sales VCL (Litre)", "group": ["VCL"], "uom": "Litre", "customer_group": None, "type": "sales"},
-		{"label": "BKT - Dealer - SAS", "group": None, "uom": None, "customer_group": "BKT - Dealer - SAS", "type": "sales"},
-		{"label": "BKT - Customer", "group": None, "uom": None, "customer_group": "BKT - Customer", "type": "sales"},
-		{"label": "BKT - Distributor", "group": None, "uom": None, "customer_group": "BKT - Distributor", "type": "sales"},
-		{"label": "Tyre Qty BKT - Dealer - SAS (Nos)", "group": ["TYRE"], "uom": "Nos", "customer_group": "BKT - Dealer - SAS", "type": "qty"},
-		{"label": "Tyre Qty BKT - Customer (Nos)", "group": ["TYRE"], "uom": "Nos", "customer_group": "BKT - Customer", "type": "qty"},
-		{"label": "Tyre Qty BKT - Distributor (Nos)", "group": ["TYRE"], "uom": "Nos", "customer_group": "BKT - Distributor", "type": "qty"},
-	]
+        if filters.get("branch"):
+            conditions.append("si.branch = %s")
+            params.append(filters["branch"])
 
-	card_values = []
-	for card in item_cards:
-		if isinstance(card.get("group"), list):
-			groups = get_child_groups(card["group"][0]) if card.get("group") else None
-		elif isinstance(card.get("group"), str):
-			groups = get_child_groups(card["group"]) if card.get("group") else None
-		else:
-			groups = None
+        if filters.get("customer"):
+            conditions.append("si.customer = %s")
+            params.append(filters["customer"])
 
-		if card["type"] == "sales":
-			current_val = get_sales(from_date, to_date, groups, card.get("uom"), card.get("customer_group"))
-			prev_val = get_sales(prev_from_date, prev_to_date, groups, card.get("uom"), card.get("customer_group"))
-		else:
-			current_val = get_qty(groups, card.get("uom"), card.get("customer_group"), from_date, to_date)
-			prev_val = get_qty(groups, card.get("uom"), card.get("customer_group"), prev_from_date, prev_to_date)
+        if filters.get("customer_group"):
+            conditions.append("c.customer_group = %s")
+            params.append(filters["customer_group"])
 
-		card_values.append({
-			"label": card["label"],
-			"current": current_val,
-			"previous": prev_val
-		})
+        if filters.get("warehouse"):
+            conditions.append("sii.warehouse = %s")
+            params.append(filters["warehouse"])
 
-	card_style = """
+        if filters.get("brand"):
+            conditions.append("sii.brand = %s")
+            params.append(filters["brand"])
+
+        if filters.get("sales_person"):
+            conditions.append("st.sales_person = %s")
+            params.append(filters["sales_person"])
+
+        # Item Group (with children)
+        if filters.get("item_group"):
+            groups = get_child_groups(filters["item_group"])
+            placeholders = ", ".join(["%s"] * len(groups))
+            conditions.append(f"sii.item_group IN ({placeholders})")
+            params.extend(groups)
+
+        query = f"""
+			SELECT IFNULL(SUM(
+				CASE 
+					WHEN si.is_return = 0 THEN sii.base_net_amount
+					WHEN si.is_return = 1 THEN -1 * ABS(sii.base_net_amount)
+				END
+			), 0)
+			FROM `tabSales Invoice Item` sii
+			INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+			INNER JOIN `tabCustomer` c ON c.name = si.customer
+			LEFT JOIN `tabSales Team` st ON st.parent = si.name
+			WHERE {" AND ".join(conditions)}
+		"""
+
+        return frappe.db.sql(query, tuple(params))[0][0] or 0
+
+    net_sales = get_net_sales_total(from_date, to_date)
+    prev_net_sales = get_net_sales_total(prev_from_date, prev_to_date)
+
+    # Item Cards
+    item_cards = [
+        {"label": "Tyre (Nos)", "group": "TYRE", "uom": "Nos", "type": "qty"},
+        {"label": "Tipper (Nos)", "group": "TIPPER", "uom": "Nos", "type": "qty"},
+        {
+            "label": "Non Tipper (Nos)",
+            "group": "Non TIPPER",
+            "uom": "Nos",
+            "type": "qty",
+        },
+        {"label": "Tyre (Kg)", "group": "TYRE", "uom": "Kg", "type": "qty"},
+        {"label": "Pumps (Nos)", "group": "PUMPS", "uom": "Nos", "type": "qty"},
+        {
+            "label": "Sales VCL (Litre)",
+            "group": ["VCL"],
+            "uom": "Litre",
+            "type": "sales",
+        },
+        {
+            "label": "BKT - Dealer - SAS",
+            "customer_group": "BKT - Dealer - SAS",
+            "type": "sales",
+        },
+        {
+            "label": "BKT - Customer",
+            "customer_group": "BKT - Customer",
+            "type": "sales",
+        },
+        {
+            "label": "BKT - Distributor",
+            "customer_group": "BKT - Distributor",
+            "type": "sales",
+        },
+    ]
+
+    card_values = []
+
+    for card in item_cards:
+
+        # HIDE CUSTOMER GROUP CARDS
+        if filters.get("customer_group"):
+            # If this card is customer-group based → hide it
+            if card.get("customer_group"):
+                continue
+
+        # HIDE ITEM GROUP CARDS
+        if filters.get("item_group"):
+            # If this card is item-group based → hide it
+            if card.get("group"):
+                continue
+
+        # Resolve Child Groups
+        if isinstance(card.get("group"), list):
+            groups = get_child_groups(card["group"][0])
+        elif isinstance(card.get("group"), str):
+            groups = get_child_groups(card["group"])
+        else:
+            groups = None
+
+        # Fetch Values
+        if card["type"] == "sales":
+            current = get_sales(
+                from_date, to_date, groups, card.get("uom"), card.get("customer_group")
+            )
+            previous = get_sales(
+                prev_from_date,
+                prev_to_date,
+                groups,
+                card.get("uom"),
+                card.get("customer_group"),
+            )
+        else:
+            current = get_qty(
+                from_date, to_date, groups, card.get("uom"), card.get("customer_group")
+            )
+            previous = get_qty(
+                prev_from_date,
+                prev_to_date,
+                groups,
+                card.get("uom"),
+                card.get("customer_group"),
+            )
+
+        card_values.append(
+            {"label": card["label"], "current": current, "previous": previous}
+        )
+    card_style = """
 		width: 280px;
 		height: 160px;
 		padding: 20px 25px;
@@ -245,9 +339,10 @@ def execute(filters=None):
 		text-align: center;
 	"""
 
-	message_cards = []
+    message_cards = []
 
-	message_cards.append(f"""
+    message_cards.append(
+        f"""
 		<div style='display:flex;gap:20px;flex-wrap:wrap;margin-bottom:20px;'>
 			<div style='{card_style}'>
 				<h4 style='margin:0;font-size:14px;'>Sales CY (₹)</h4>
@@ -258,19 +353,23 @@ def execute(filters=None):
 				<h2 style='margin:5px 0 0 0;color:#6c757d;font-size:24px;'>{frappe.format_value(prev_net_sales, {"fieldtype": "Currency"})}</h2>
 			</div>
 		</div>
-	""")
+	"""
+    )
 
-	message_cards.append("<div style='display:flex;gap:20px;flex-wrap:wrap;'>")
-	for card in card_values:
-		message_cards.append(f"""
+    message_cards.append("<div style='display:flex;gap:20px;flex-wrap:wrap;'>")
+    for card in card_values:
+        message_cards.append(
+            f"""
 			<div style='{card_style}'>
 				<h4 style='margin:0;font-size:14px;'>{card['label']} CY</h4>
 				<h2 style='margin:5px 0 0 0;color:#28a745;font-size:24px;'>{frappe.format_value(card['current'], {"fieldtype": "Float"})}</h2>
 				<h4 style='margin:10px 0 0 0;font-size:14px;'>{card['label']} LY</h4>
 				<h2 style='margin:5px 0 0 0;color:#6c757d;font-size:24px;'>{frappe.format_value(card['previous'], {"fieldtype": "Float"})}</h2>
 			</div>
-		""")
-	message_cards.append("</div>")
+		"""
+        )
+    message_cards.append("</div>")
 
-	message = "".join(message_cards)
-	return [], [], message, None
+    message = "".join(message_cards)
+
+    return [], [], message, None
