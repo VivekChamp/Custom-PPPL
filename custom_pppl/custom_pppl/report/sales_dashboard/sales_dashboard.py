@@ -80,6 +80,7 @@ def execute(filters=None):
     ):
         conditions = [
             "si.docstatus = 1",
+            "si.is_return = 0",
             "c.customer_name NOT LIKE %s",
             "si.posting_date BETWEEN %s AND %s",
         ]
@@ -181,6 +182,7 @@ def execute(filters=None):
 
         conditions = [
             "si.docstatus = 1",
+            "si.is_return = 0",
             "si.posting_date BETWEEN %s AND %s",
             "c.customer_name NOT LIKE %s",
         ]
