@@ -126,7 +126,7 @@ def get_data(filters):
         INNER JOIN `tabPayment Entry` pe
             ON pe.name = per.parent
             AND pe.docstatus = 1
-        WHERE si.docstatus = 1
+        WHERE si.docstatus = 1 AND si.is_return = 0
         {sql_where}
 
         UNION ALL
@@ -169,7 +169,7 @@ def get_data(filters):
         INNER JOIN `tabJournal Entry` je
             ON je.name = jea.parent
             AND je.docstatus = 1
-        WHERE si.docstatus = 1
+        WHERE si.docstatus = 1 AND si.is_return = 0
         {sql_where}
 
         UNION ALL
@@ -205,7 +205,7 @@ def get_data(filters):
             NULL
 
         FROM `tabSales Invoice` si
-        WHERE si.docstatus = 1
+        WHERE si.docstatus = 1 AND si.is_return = 0
         {sql_where}
         AND NOT EXISTS (
             SELECT 1
