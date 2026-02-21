@@ -5,7 +5,6 @@ import frappe
 from frappe import _
 
 
-
 def execute(filters=None):
     if not filters:
         filters = {}
@@ -13,6 +12,7 @@ def execute(filters=None):
     columns = get_columns()
     data = get_data(filters)
     return columns, data
+
 
 def get_data(filters):
     filters = filters or {}
@@ -76,7 +76,7 @@ def get_data(filters):
         t.reference_date,
         t.owner,
         t.age_in_days,
-       
+
         @running_paid := IF(@prev_invoice = t.sales_invoice,
                             @running_paid + IFNULL(t.allocated,0),
                             IFNULL(t.allocated,0)
@@ -88,7 +88,7 @@ def get_data(filters):
 
     FROM
     (
-        -- PAYMENT ENTRY --
+        -- PAYMENT ENTRY
         SELECT
             si.name AS sales_invoice,
             si.selling_price_list,
@@ -117,9 +117,7 @@ def get_data(filters):
             pe.reference_no,
             pe.reference_date,
             pe.owner,
-
-            DATEDIFF(pe.posting_date, si.posting_date ) AS age_in_days
-
+            DATEDIFF(pe.posting_date, si.posting_date) AS age_in_days
 
         FROM `tabSales Invoice` si
         INNER JOIN `tabPayment Entry Reference` per
@@ -128,42 +126,41 @@ def get_data(filters):
         INNER JOIN `tabPayment Entry` pe
             ON pe.name = per.parent
             AND pe.docstatus = 1
-
         WHERE si.docstatus = 1
         {sql_where}
 
         UNION ALL
 
-        -- JOURNAL ENTRY --
+        -- JOURNAL ENTRY
         SELECT
-            si.name AS sales_invoice,
+            si.name,
             si.selling_price_list,
             si.docstatus,
             si.customer_group,
-            si.customer AS party,
-            si.posting_date AS invoice_date,
+            si.customer,
+            si.posting_date,
             si.total,
             si.net_total,
             si.rounded_total,
-            si.due_date AS invoice_due_date,
+            si.due_date,
             si.additional_discount_percentage,
             si.discount_amount,
             si.additional_discount_account,
-            si.currency AS account_currency,
+            si.currency,
             si.outstanding_amount,
 
-            'Journal Entry' AS doctype,
-            NULL AS payment_id,
-            je.name AS journal_id,
-            je.posting_date AS payment_date,
+            'Journal Entry',
+            NULL,
+            je.name,
+            je.posting_date,
             jea.party_type,
-            NULL AS mode_of_payment,
-            IFNULL(jea.credit_in_account_currency, jea.credit) AS paid_amount,
-            IFNULL(jea.credit_in_account_currency, jea.credit) AS allocated,
-            je.cheque_no AS reference_no,
-            je.cheque_date AS reference_date,
+            NULL,
+            IFNULL(jea.credit_in_account_currency, jea.credit),
+            IFNULL(jea.credit_in_account_currency, jea.credit),
+            je.cheque_no,
+            je.cheque_date,
             je.owner,
-            DATEDIFF(je.posting_date, si.posting_date ) AS age_in_days
+            DATEDIFF(je.posting_date, si.posting_date)
 
         FROM `tabSales Invoice` si
         INNER JOIN `tabJournal Entry Account` jea
@@ -172,9 +169,62 @@ def get_data(filters):
         INNER JOIN `tabJournal Entry` je
             ON je.name = jea.parent
             AND je.docstatus = 1
-
         WHERE si.docstatus = 1
         {sql_where}
+
+        UNION ALL
+
+        SELECT
+            si.name,
+            si.selling_price_list,
+            si.docstatus,
+            si.customer_group,
+            si.customer,
+            si.posting_date,
+            si.total,
+            si.net_total,
+            si.rounded_total,
+            si.due_date,
+            si.additional_discount_percentage,
+            si.discount_amount,
+            si.additional_discount_account,
+            si.currency,
+            si.outstanding_amount,
+
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            "Customer",
+            NULL,
+            0,
+            0,
+            NULL,
+            NULL,
+            si.owner,
+            NULL
+
+        FROM `tabSales Invoice` si
+        WHERE si.docstatus = 1
+        {sql_where}
+        AND NOT EXISTS (
+            SELECT 1
+            FROM `tabPayment Entry Reference` per
+            INNER JOIN `tabPayment Entry` pe
+                ON pe.name = per.parent
+                AND pe.docstatus = 1
+            WHERE per.reference_name = si.name
+            AND per.reference_doctype = 'Sales Invoice'
+        )
+        AND NOT EXISTS (
+            SELECT 1
+            FROM `tabJournal Entry Account` jea
+            INNER JOIN `tabJournal Entry` je
+                ON je.name = jea.parent
+                AND je.docstatus = 1
+            WHERE jea.reference_name = si.name
+            AND jea.reference_type = 'Sales Invoice'
+        )
 
     ) t,
 
@@ -189,182 +239,170 @@ def get_data(filters):
 def get_columns():
     columns = [
         {
-			"fieldname": "sales_invoice",
-			"label": "Sales Invoice",
-			"fieldtype": "Link",
-			"options": "Sales Invoice",
-			"width": 160,
-		},
-        {
-            "fieldname": "docstatus", 
-            "label": "Doc Status", 
-            "fieldtype": "Int", 
-            "width": 90
+            "fieldname": "sales_invoice",
+            "label": "Sales Invoice",
+            "fieldtype": "Link",
+            "options": "Sales Invoice",
+            "width": 160,
         },
         {
-			"fieldname": "doctype",
-			"label": "Doctype",
-			"fieldtype": "Data",
-			"width": 130,
-		},
-		{
-			"fieldname": "payment_id",
-			"label": "Payment Entry",
-			"fieldtype": "Link",
-			"options": "Payment Entry",
-			"width": 160,
-		},
-		{
-			"fieldname": "journal_id",
-			"label": "Journal Entry",
-			"fieldtype": "Link",
-			"options": "Journal Entry",
-			"width": 160,
-		},
-        {
-            "fieldname": "payment_date", 
-            "label": "Payment Date", 
-            "fieldtype": "Date", 
-            "width": 120
+            "fieldname": "docstatus",
+            "label": "Doc Status",
+            "fieldtype": "Int",
+            "width": 90,
         },
         {
-            "fieldname": "mode_of_payment", 
-            "label": "Mode of Payment", 
-            "fieldtype": "Link", 
-            "options": "Mode of Payment", 
-            "width": 140
-        },
-        {
-            "fieldname": "reference_no", 
-            "label": "Cheque/Reference No", 
-            "fieldtype": "Data", 
-            "width": 140
-        },
-        {
-            "fieldname": "reference_date", 
-            "label": "Cheque/Reference Date", 
-            "fieldtype": "Date", 
-            "width": 140
-        },
-        {
-            "fieldname": "party_type", 
-            "label": "Party Type", 
-            "fieldtype": "Data", 
-            "width": 110
-        },
-        {
-            "fieldname": "party", 
-            "label": "Party", 
-            "fieldtype": "Link", 
-            "options": "Customer", 
-            "width": 180
-        },
-        {
-            "fieldname": "customer_group", 
-            "label": "Customer Group", 
-            "fieldtype": "Link", 
-            "options": "Customer Group", 
-            "width": 140
-        },
-        {
-            "fieldname": "paid_amount", 
-            "label": "Paid Amount", 
-            "fieldtype": "Currency", 
-            "width": 130
-        },
-        {
-            "fieldname": "account_currency", 
-            "label": "Account Currency (From)", 
-            "fieldtype": "Data", 
-            "width": 120
-        },
-        {
-            "fieldname": "invoice_due_date", 
-            "label": "Invoice Due Date", 
-            "fieldtype": "Date", 
-            "width": 140
-        },
-        {
-            "fieldname": "invoice_date", 
-            "label": "Invoice Date", 
-            "fieldtype": "Date", 
-            "width": 120
-        },
-        {
-            "fieldname": "total", 
-            "label": "Total", 
-            "fieldtype": "Currency", 
-            "width": 120
-        },
-        {
-            "fieldname": "net_total", 
-            "label": "Net Total", 
-            "fieldtype": "Currency", 
-            "width": 120
-        },
-        {
-            "fieldname": "outstanding_amount", 
-            "label": "Total Outstanding", 
-            "fieldtype": "Currency", 
-            "width": 120
-        },
-        {
-            "fieldname": "rounded_total", 
-            "label": "Round Total", 
-            "fieldtype": "Currency", 
-            "width": 120
-        },
-        {
-            "fieldname": "allocated", 
-            "label": "Allocated", 
-            "fieldtype": "Currency", 
-            "width": 120
-        },
-        {
-            "fieldname": "balance", 
-            "label": "Bal", 
-            "fieldtype": "Currency", ""
-            "width": 100
-        },
-        {
-            "fieldname": "owner", 
-            "label": "Owner", 
-            "fieldtype": "Data", 
-            "width": 180
-        },
-        {
-            "fieldname": "age_in_days", 
-            "label": "Age in Days", 
-            "fieldtype": "Int", 
-            "width": 110
-        },
-        {
-            "fieldname": "additional_discount_account", 
-            "label": "Discount Account", 
-            "fieldtype": "Link", 
-            "options": "Account",
-            "width": 180
-        },
-        {
-            "fieldname": "additional_discount_percentage", 
-            "label": "Additional Discount Percentage", 
+            "fieldname": "doctype",
+            "label": "Doctype",
             "fieldtype": "Data",
-            "width": 100
+            "width": 130,
         },
         {
-            "fieldname": "discount_amount", 
-            "label": "Additional Discount Amount", 
+            "fieldname": "payment_id",
+            "label": "Payment Entry",
+            "fieldtype": "Link",
+            "options": "Payment Entry",
+            "width": 160,
+        },
+        {
+            "fieldname": "journal_id",
+            "label": "Journal Entry",
+            "fieldtype": "Link",
+            "options": "Journal Entry",
+            "width": 160,
+        },
+        {
+            "fieldname": "payment_date",
+            "label": "Payment Date",
+            "fieldtype": "Date",
+            "width": 120,
+        },
+        {
+            "fieldname": "mode_of_payment",
+            "label": "Mode of Payment",
+            "fieldtype": "Link",
+            "options": "Mode of Payment",
+            "width": 140,
+        },
+        {
+            "fieldname": "reference_no",
+            "label": "Cheque/Reference No",
+            "fieldtype": "Data",
+            "width": 140,
+        },
+        {
+            "fieldname": "reference_date",
+            "label": "Cheque/Reference Date",
+            "fieldtype": "Date",
+            "width": 140,
+        },
+        {
+            "fieldname": "party_type",
+            "label": "Party Type",
+            "fieldtype": "Data",
+            "width": 110,
+        },
+        {
+            "fieldname": "party",
+            "label": "Party",
+            "fieldtype": "Link",
+            "options": "Customer",
+            "width": 180,
+        },
+        {
+            "fieldname": "customer_group",
+            "label": "Customer Group",
+            "fieldtype": "Link",
+            "options": "Customer Group",
+            "width": 140,
+        },
+        {
+            "fieldname": "paid_amount",
+            "label": "Paid Amount",
             "fieldtype": "Currency",
-            "width": 100
+            "width": 130,
         },
         {
-            "fieldname": "selling_price_list", 
-            "label": "Price List", 
-            "fieldtype": "Link", 
-            "options": "Price List",
-            "width": 180
+            "fieldname": "account_currency",
+            "label": "Account Currency (From)",
+            "fieldtype": "Data",
+            "width": 120,
         },
-        
+        {
+            "fieldname": "invoice_due_date",
+            "label": "Invoice Due Date",
+            "fieldtype": "Date",
+            "width": 140,
+        },
+        {
+            "fieldname": "invoice_date",
+            "label": "Invoice Date",
+            "fieldtype": "Date",
+            "width": 120,
+        },
+        {"fieldname": "total", "label": "Total", "fieldtype": "Currency", "width": 120},
+        {
+            "fieldname": "net_total",
+            "label": "Net Total",
+            "fieldtype": "Currency",
+            "width": 120,
+        },
+        {
+            "fieldname": "outstanding_amount",
+            "label": "Total Outstanding",
+            "fieldtype": "Currency",
+            "width": 120,
+        },
+        {
+            "fieldname": "rounded_total",
+            "label": "Round Total",
+            "fieldtype": "Currency",
+            "width": 120,
+        },
+        {
+            "fieldname": "allocated",
+            "label": "Allocated",
+            "fieldtype": "Currency",
+            "width": 120,
+        },
+        {
+            "fieldname": "balance",
+            "label": "Bal",
+            "fieldtype": "Currency",
+            "" "width": 100,
+        },
+        {"fieldname": "owner", "label": "Owner", "fieldtype": "Data", "width": 180},
+        {
+            "fieldname": "age_in_days",
+            "label": "Age in Days",
+            "fieldtype": "Int",
+            "width": 110,
+        },
+        {
+            "fieldname": "additional_discount_account",
+            "label": "Discount Account",
+            "fieldtype": "Link",
+            "options": "Account",
+            "width": 180,
+        },
+        {
+            "fieldname": "additional_discount_percentage",
+            "label": "Additional Discount Percentage",
+            "fieldtype": "Data",
+            "width": 100,
+        },
+        {
+            "fieldname": "discount_amount",
+            "label": "Additional Discount Amount",
+            "fieldtype": "Currency",
+            "width": 100,
+        },
+        {
+            "fieldname": "selling_price_list",
+            "label": "Price List",
+            "fieldtype": "Link",
+            "options": "Price List",
+            "width": 180,
+        },
     ]
     return columns
-
